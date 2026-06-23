@@ -6,10 +6,6 @@ An end-to-end, regulator-style retail credit-risk modelling pipeline built on th
 combines them into **Expected Loss (ECL = PD × LGD × EAD)**, and delivers a banker-readable
 **scorecard** plus a **Streamlit underwriting app** and a **one-page Model Validation Report**.
 
-> **Design stance:** every modelling choice here is the one a bank's Model Risk function would
-> defend in an audit — explainable champion, leakage controls, out-of-time validation, and
-> drift monitoring. The headline metrics are deliberately *realistic*, not inflated.
-
 ---
 
 ## 1. Business problem
