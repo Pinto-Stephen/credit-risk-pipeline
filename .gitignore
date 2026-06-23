@@ -1,10 +1,5 @@
 # ── Raw data (download from Kaggle — see README §2) ───────────────────────────
 /data/raw/
-
-# ── Large generated data: reproduce by running notebooks 01–02 ────────────────
-# Small model artifacts (model_artifacts/*.pkl|json|csv, bin_edges.pkl,
-# woe_mappings.pkl) are intentionally NOT ignored so the Streamlit app runs on a
-# fresh clone without re-running the heavy notebooks.
 /data/processed/*.csv.gz
 
 # ── Python ────────────────────────────────────────────────────────────────────
