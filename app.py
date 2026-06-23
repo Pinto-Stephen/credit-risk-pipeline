@@ -113,15 +113,13 @@ revol_util = st.sidebar.slider("Revolving Utilisation (%)",    0.0,  100.0,  45.
 
 if st.sidebar.button("Run Credit Underwriting", type="primary", use_container_width=True):
 
-    # Monthly payment (standard amortisation formula)
     term_months = int(term.strip().split()[0])
     r = int_rate / 1200
     installment = (loan_amnt * r / (1 - (1 + r) ** -term_months)) if r > 0 else loan_amnt / term_months
 
-    # Raw feature dict — keys must match the column names used in notebook 02
     raw = {
         "loan_amnt"    : loan_amnt,
-        "funded_amnt"  : loan_amnt,      # assume fully funded
+        "funded_amnt"  : loan_amnt,
         "term"         : term,
         "int_rate"     : int_rate,
         "installment"  : installment,
@@ -141,7 +139,7 @@ if st.sidebar.button("Run Credit Underwriting", type="primary", use_container_wi
     ead_vals = []
     for f in ead_features:
         if f == "term":
-            ead_vals.append(float(term_months))   # notebook 05 stored term as numeric
+            ead_vals.append(float(term_months))
         else:
             ead_vals.append(float(raw.get(f, 0.0)))
 
@@ -160,7 +158,6 @@ if st.sidebar.button("Run Credit Underwriting", type="primary", use_container_wi
 
     # ── 4. IFRS 9 staging ────────────────────────────────────────────────────
     # Proper IFRS 9 SICR requires comparing current PD to origination PD.
-    # Without stored origination PD, we use a 10 % absolute threshold as a proxy.
     ifrs9 = "Stage 1 — 12-month ECL" if computed_pd < 0.10 else "Stage 2 — Lifetime ECL"
 
     # ── 5. Output ─────────────────────────────────────────────────────────────
