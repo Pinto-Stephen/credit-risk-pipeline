@@ -1,10 +1,11 @@
 # Credit Default Risk Pipeline — PD / LGD / EAD + Scorecard
 
 An end-to-end, regulator-style retail credit-risk modelling pipeline built on the public
-**Lending Club** loan book (2007–2018). It produces the three Basel risk parameters —
-**PD** (Probability of Default), **LGD** (Loss Given Default), **EAD** (Exposure at Default) —
-combines them into **Expected Loss (ECL = PD × LGD × EAD)**, and delivers a banker-readable
-**scorecard** plus a **Streamlit underwriting app** and a **one-page Model Validation Report**.
+**Lending Club** loan book (2007–2018), in **Python and SQL**. It produces the three Basel risk
+parameters — **PD** (Probability of Default), **LGD** (Loss Given Default), **EAD** (Exposure at
+Default) — combines them into **Expected Loss (ECL = PD × LGD × EAD)**, and delivers a
+banker-readable **scorecard** plus a **Streamlit underwriting app** (with a SQL-backed decision
+audit log) and a **one-page Model Validation Report**.
 
 ---
 
@@ -47,9 +48,15 @@ credit-risk-pipeline/
 ├── README.md
 ├── Model_Validation_Report.pdf       # One-page MRM-style sign-off (generated, see §8)
 └── data/
-    ├── raw/        accepted_2007_to_2018Q4.csv.gz   # (git-ignored — download from Kaggle)
-    └── processed/  cohorts, engineered features, model_artifacts/   (CSVs git-ignored)
+    ├── raw/        accepted_2007_to_2018Q4.csv.gz, loans.db   # (git-ignored — download from Kaggle)
+    └── processed/  cohorts, engineered features, model_artifacts/, decisions.db   (CSVs/DBs git-ignored)
 ```
+
+**SQL in this pipeline:** `01_eda.ipynb` lands the raw extract in a local SQLite database
+(`data/raw/loans.db`) and runs cohort construction — target derivation (`CASE`), status filtering
+(`WHERE ... IN`), and `%`-string-to-numeric casts — as a SQL query against it, not pandas masking.
+`app.py` logs every scored applicant to a SQLite audit table (`data/processed/decisions.db`) and
+reads it back with `SELECT ... ORDER BY` / `GROUP BY` aggregates in the "Decision History" panel.
 
 **Data source:** Lending Club *accepted* loans, Kaggle dataset
 `wordsforthewise/lending-club` → `accepted_2007_to_2018Q4.csv.gz`. Place it in `data/raw/`.
@@ -228,6 +235,11 @@ Input borrower attributes → outputs **scorecard points, PD, LGD, EAD, ECL**, a
 review / decline** decision (PD cut-offs 8% / 15%), an **IFRS-9 stage** proxy, and **adverse-action
 reason codes** (the features that subtract the most points from the score). Run with
 `streamlit run app.py`.
+
+Every decision is also written to a SQLite audit table (`data/processed/decisions.db`); the
+"Decision History" panel reads it back with a `SELECT ... ORDER BY scored_at DESC LIMIT 25` and a
+`GROUP BY decision` portfolio aggregate — a minimal version of the record-keeping a real Basel/
+IFRS-9 decisioning system needs.
 
 ---
 

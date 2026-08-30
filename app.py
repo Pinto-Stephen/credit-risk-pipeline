@@ -1,6 +1,8 @@
 import os
 import json
 import pickle
+import sqlite3
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -13,6 +15,58 @@ st.caption("Champion scorecard (logistic regression + WoE) · ECL = PD × LGD ×
 
 PROCESSED_DIR = "data/processed"
 ARTIFACTS_DIR = os.path.join(PROCESSED_DIR, "model_artifacts")
+DECISIONS_DB  = os.path.join(PROCESSED_DIR, "decisions.db")
+
+
+# ── SQL audit log ──────────────────────────────────────────────────────────────
+def init_decisions_db() -> sqlite3.Connection:
+    """Underwriting decisions are logged to SQLite, giving the app the audit trail a
+    production Basel/IFRS-9 decision engine is expected to keep."""
+    conn = sqlite3.connect(DECISIONS_DB)
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS decisions (
+            id                INTEGER PRIMARY KEY AUTOINCREMENT,
+            scored_at         TEXT NOT NULL,
+            loan_amnt         REAL,
+            term_months       INTEGER,
+            grade             TEXT,
+            int_rate          REAL,
+            annual_inc        REAL,
+            dti               REAL,
+            fico              INTEGER,
+            home_ownership    TEXT,
+            revol_util        REAL,
+            pd_estimate       REAL,
+            lgd_estimate      REAL,
+            ead_estimate      REAL,
+            ecl_estimate      REAL,
+            scorecard_points  INTEGER,
+            decision          TEXT,
+            ifrs9_stage       TEXT
+        )
+        """
+    )
+    conn.commit()
+    return conn
+
+
+def log_decision(row: dict) -> None:
+    conn = init_decisions_db()
+    conn.execute(
+        """
+        INSERT INTO decisions
+            (scored_at, loan_amnt, term_months, grade, int_rate, annual_inc, dti, fico,
+             home_ownership, revol_util, pd_estimate, lgd_estimate, ead_estimate,
+             ecl_estimate, scorecard_points, decision, ifrs9_stage)
+        VALUES (:scored_at, :loan_amnt, :term_months, :grade, :int_rate, :annual_inc, :dti, :fico,
+                :home_ownership, :revol_util, :pd_estimate, :lgd_estimate, :ead_estimate,
+                :ecl_estimate, :scorecard_points, :decision, :ifrs9_stage)
+        """,
+        row,
+    )
+    conn.commit()
+    conn.close()
 
 
 # ── Artifact loading ──────────────────────────────────────────────────────────
@@ -160,6 +214,27 @@ if st.sidebar.button("Run Credit Underwriting", type="primary", use_container_wi
     # Proper IFRS 9 SICR requires comparing current PD to origination PD.
     ifrs9 = "Stage 1 — 12-month ECL" if computed_pd < 0.10 else "Stage 2 — Lifetime ECL"
 
+    # ── 4b. Log this decision to the SQL audit trail ────────────────────────
+    log_decision({
+        "scored_at"       : datetime.now().isoformat(timespec="seconds"),
+        "loan_amnt"       : loan_amnt,
+        "term_months"     : term_months,
+        "grade"           : grade,
+        "int_rate"        : int_rate,
+        "annual_inc"      : annual_inc,
+        "dti"             : dti,
+        "fico"            : fico,
+        "home_ownership"  : home_own,
+        "revol_util"      : revol_util,
+        "pd_estimate"     : computed_pd,
+        "lgd_estimate"    : computed_lgd,
+        "ead_estimate"    : computed_ead,
+        "ecl_estimate"    : ecl,
+        "scorecard_points": score,
+        "decision"        : decision,
+        "ifrs9_stage"     : ifrs9,
+    })
+
     # ── 5. Output ─────────────────────────────────────────────────────────────
     st.subheader(f"Decision: {decision}")
     st.progress(float(np.clip(1.0 - computed_pd, 0.0, 1.0)), text="Creditworthiness Index")
@@ -186,3 +261,40 @@ if st.sidebar.button("Run Credit Underwriting", type="primary", use_container_wi
         )
         for i, (feature, pts) in enumerate(adverse_reasons(woe_row, n=3), 1):
             st.write(f"**Reason {i}:** `{feature}` — score impact: **{pts:+.1f} pts**")
+
+
+# ── 7. Decision history (SQL-backed audit log) ──────────────────────────────────
+st.divider()
+with st.expander("📜 Decision History — SQL audit log"):
+    if os.path.exists(DECISIONS_DB):
+        conn = sqlite3.connect(DECISIONS_DB)
+        history = pd.read_sql_query(
+            """
+            SELECT scored_at, grade, loan_amnt, pd_estimate, lgd_estimate,
+                   ead_estimate, ecl_estimate, decision, ifrs9_stage
+            FROM decisions
+            ORDER BY scored_at DESC
+            LIMIT 25
+            """,
+            conn,
+        )
+        portfolio = pd.read_sql_query(
+            """
+            SELECT decision, COUNT(*) AS n, AVG(pd_estimate) AS avg_pd, SUM(ecl_estimate) AS total_ecl
+            FROM decisions
+            GROUP BY decision
+            ORDER BY n DESC
+            """,
+            conn,
+        )
+        conn.close()
+    else:
+        history, portfolio = pd.DataFrame(), pd.DataFrame()
+
+    if len(history):
+        st.caption("Last 25 scored applicants (`SELECT ... ORDER BY scored_at DESC LIMIT 25`):")
+        st.dataframe(history, use_container_width=True, hide_index=True)
+        st.caption("Portfolio snapshot (`SELECT decision, COUNT(*), AVG(pd), SUM(ecl) ... GROUP BY decision`):")
+        st.dataframe(portfolio, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No decisions logged yet — run an underwriting decision above.")
